@@ -1,0 +1,8 @@
+.venv/
+.venv-linux/
+__pycache__/
+*.pyc
+
+data/bronze/
+data/silver/
+data/gold/
