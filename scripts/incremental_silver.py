@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from delta import configure_spark_with_delta_pip
 from pyspark.sql.functions import col, to_date, current_timestamp, lit
 from delta.tables import DeltaTable
-
+from src.data_quality import apply_data_quality
 
 # --------------------------------------------------
 # 1. Configure Spark
@@ -143,20 +143,38 @@ else:
         # --------------------------------------------------
         # 10. Silver Transformations
         # --------------------------------------------------
+        
+        dq_df = apply_data_quality(incoming_df)
+        valid_df = (
+            dq_df.filter(col("dq_reason").isNull())
+        )
+        invalid_df = (
+            dq_df.filter(col("dq_reason").isNotNull())
+        )
+        quarantine_path = "data/quarantine/orders"
+        if  invalid_df.count() > 0:
+            (
+                invalid_df
+                .write
+                .format("delta")
+                .mode("append")
+                .save(quarantine_path)
+            )
+            print("Invalid records appended to quarantine.")
+        else:
+             print("No invalid records to quarantine.")
+        print("Invalid records:")
+        invalid_df.show(truncate=False)
+
+        print("Valid records:")
+        valid_df.show(truncate=False)
 
         silver_df = (
-            incoming_df
-            .dropDuplicates(["order_id"])
-            .filter(col("quantity") > 0)
-            .filter(col("unit_price") > 0)
-            .withColumn(
-                "order_date",
-                to_date(col("order_date"))
-            )
-            .withColumn(
-                "total_amount",
-                col("quantity") * col("unit_price")
-            )
+           valid_df
+           .dropDuplicates(["order_id"])
+           .drop("dq_reason")
+           .withColumn("order_date",to_date(col("order_date")))
+           .withColumn("total_amount",col("quantity")*col("unit_price"))
         )
 
         print("Silver records:")
